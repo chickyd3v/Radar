@@ -66,8 +66,20 @@ inline bool MatchPattern(const CompiledPattern& pattern, std::string_view candid
     if (!pattern.hasWildcard) {
         return candidate == pattern.normalized;
     }
-    size_t pi = 0, ci = 0;
     const auto& pat = pattern.normalized;
+    const size_t onlyStar = pat.find('*');
+    // Trailing * only: match entity paths like .../AldurRuneEncounterController
+    if (onlyStar != std::string::npos && onlyStar == pat.size() - 1
+        && pat.find('*', onlyStar + 1) == std::string::npos) {
+        const std::string_view prefix = std::string_view(pat).substr(0, onlyStar);
+        if (prefix.empty()) return true;
+        if (candidate.size() >= prefix.size()
+            && candidate.compare(candidate.size() - prefix.size(), prefix.size(), prefix) == 0)
+            return true;
+        return candidate.size() >= prefix.size()
+               && candidate.compare(0, prefix.size(), prefix) == 0;
+    }
+    size_t pi = 0, ci = 0;
     while (pi < pat.size() && ci < candidate.size()) {
         if (pat[pi] == '*') {
             ++pi;

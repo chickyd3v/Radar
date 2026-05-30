@@ -6,6 +6,7 @@
 #include "RadarTypes.h"
 
 #include <algorithm>
+#include <string_view>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -56,7 +57,8 @@ public:
             std::string display = it.key();
             if (display == "*") display = "Global";
             areaDisplayNames[areaKey] = display;
-            areaSource[areaKey] = category;
+            if (category != "User" || !areaSource.count(areaKey))
+                areaSource[areaKey] = category;
             for (const auto& entry : it.value()) {
                 size_t idx = storage.size();
                 storage.push_back(ParseTarget(entry, category));
@@ -257,9 +259,36 @@ public:
         size_t idx = storage.size();
         storage.push_back(std::move(t));
         byArea[key].push_back(idx);
-        areaSource[key] = "User";
-        if (!areaDisplayNames.count(key))
-            areaDisplayNames[key] = DisplayNameForArea(key);
+        // Keep Acts/Endgame source for bundled areas — only tag new areas as User.
+        if (!areaSource.count(key)) {
+            areaSource[key] = "User";
+            areaDisplayNames[key] = key;
+        }
+    }
+
+    std::vector<std::string> ListUserAreas() const { return ListAreas("User"); }
+
+    size_t CountUserTargetsInArea(const std::string& areaKey) const {
+        const std::string key = NormalizeAreaKey(areaKey);
+        auto it = byArea.find(key);
+        if (it == byArea.end()) return 0;
+        size_t n = 0;
+        for (size_t idx : it->second) {
+            if (idx < storage.size() && storage[idx].category == "User") ++n;
+        }
+        return n;
+    }
+
+    bool RemoveUserTargetFromArea(size_t storageIndex, const std::string& areaKey) {
+        const std::string key = NormalizeAreaKey(areaKey);
+        auto it = byArea.find(key);
+        if (it == byArea.end()) return false;
+        auto& indices = it->second;
+        const auto pos = std::find(indices.begin(), indices.end(), storageIndex);
+        if (pos == indices.end()) return false;
+        indices.erase(pos);
+        if (storageIndex < storage.size()) storage[storageIndex].enabled = false;
+        return true;
     }
 };
 

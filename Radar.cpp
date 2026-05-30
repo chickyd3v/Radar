@@ -9,6 +9,22 @@
 #include "ui/RadarUi.h"
 
 #include <imgui.h>
+#include <cmath>
+#include <optional>
+#include <string>
+
+namespace {
+
+constexpr float kPickerRadiusPx = 14.f;
+constexpr float kPickerRadiusSq = kPickerRadiusPx * kPickerRadiusPx;
+
+std::string PathBaseName(const std::string& path) {
+    if (const size_t slash = path.find_last_of('/'); slash != std::string::npos)
+        return path.substr(slash + 1);
+    return path;
+}
+
+} // namespace
 
 class RadarPlugin : public PluginSDK::Plugin {
 public:
@@ -133,62 +149,129 @@ private:
         if (!dl) return;
 
         if (m_ui.pickerPoiMode) {
+            auto* gameCtx = const_cast<PluginSDK::Context*>(ctx());
+            std::optional<PluginSDK::TgtLocation> nearest;
+            float nearestDistSq = kPickerRadiusSq;
+
             ctx()->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
-                const auto scr = RadarRender::ProjectGridToScreen(
-                    const_cast<PluginSDK::Context*>(ctx()), snap, loc.X, loc.Y, 0.f);
+                const auto scr =
+                    RadarRender::ProjectGridToScreen(gameCtx, snap, loc.X, loc.Y, 0.f);
                 if (!scr.valid) return true;
                 const float dx = mouse.x - scr.sx;
                 const float dy = mouse.y - scr.sy;
-                const bool hover = (dx * dx + dy * dy) < 144.f;
-                dl->AddCircleFilled(ImVec2(scr.sx, scr.sy), 8.f,
-                                    hover ? IM_COL32(0, 255, 255, 255)
-                                          : IM_COL32(255, 255, 0, 200));
-                if (clicked && hover) {
-                    m_ui.editTarget = {};
-                    m_ui.editTarget.path = loc.Path;
-                    m_ui.editTarget.name = loc.Path;
-                    m_ui.editTarget.category = "User";
-                    m_ui.editTarget.enabled = true;
-                    m_ui.editAreaKey = m_overlay.targets.ResolveAreaKey(snap.CurrentAreaHash,
-                                                                        snap.CurrentAreaName);
-                    m_ui.editIsNew = true;
-                    m_ui.editModalOpen = true;
-                    EndPickerMode();
+                const float distSq = dx * dx + dy * dy;
+                if (distSq < nearestDistSq) {
+                    nearestDistSq = distSq;
+                    nearest = loc;
                 }
                 return true;
             });
+
+            if (nearest) {
+                ctx()->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+                    const auto scr =
+                        RadarRender::ProjectGridToScreen(gameCtx, snap, loc.X, loc.Y, 0.f);
+                    if (!scr.valid) return true;
+                    const float dx = mouse.x - scr.sx;
+                    const float dy = mouse.y - scr.sy;
+                    const float distSq = dx * dx + dy * dy;
+                    if (distSq >= kPickerRadiusSq) return true;
+                    const bool isNearest = loc.Path == nearest->Path && loc.X == nearest->X
+                                           && loc.Y == nearest->Y;
+                    dl->AddCircleFilled(ImVec2(scr.sx, scr.sy), isNearest ? 9.f : 6.f,
+                                        isNearest ? IM_COL32(0, 255, 255, 255)
+                                                  : IM_COL32(255, 255, 0, 120));
+                    return true;
+                });
+                dl->AddText(ImVec2(12.f, 32.f), IM_COL32(200, 255, 200, 255),
+                            nearest->Path.c_str());
+            }
+
+            if (clicked && nearest) {
+                m_ui.editTarget = {};
+                m_ui.editTarget.path = nearest->Path;
+                m_ui.editTarget.name = PathBaseName(nearest->Path);
+                m_ui.editTarget.category = "User";
+                m_ui.editTarget.enabled = true;
+                m_ui.editTarget.showIcon = false;
+                m_ui.editAreaKey = m_overlay.targets.ResolveAreaKey(snap.CurrentAreaHash,
+                                                                    snap.CurrentAreaName);
+                m_ui.editIsNew = true;
+                m_ui.editStorageIndex = SIZE_MAX;
+                m_ui.editModalOpen = true;
+                EndPickerMode();
+            }
         }
 
         if (m_ui.pickerEntityMode) {
+            auto* gameCtx = const_cast<PluginSDK::Context*>(ctx());
+            const PluginSDK::Entity* nearestEnt = nullptr;
+            float nearestDistSq = kPickerRadiusSq;
+
             for (const auto& e : snap.Entities) {
                 if (!e.IsValid) continue;
-                const auto scr = RadarRender::ProjectEntityToScreen(
-                    const_cast<PluginSDK::Context*>(ctx()), snap, e);
+                if (e.EntityState == PluginSDK::EntityState::Useless) continue;
+                if (e.EntityType != PluginSDK::EntityType::Monster
+                    && e.EntityType != PluginSDK::EntityType::Chest
+                    && e.EntityType != PluginSDK::EntityType::NPC)
+                    continue;
+                const auto scr = RadarRender::ProjectEntityToScreen(gameCtx, snap, e);
                 if (!scr.valid) continue;
                 const float dx = mouse.x - scr.sx;
                 const float dy = mouse.y - scr.sy;
-                const bool hover = (dx * dx + dy * dy) < 144.f;
-                dl->AddCircleFilled(ImVec2(scr.sx, scr.sy), 6.f,
-                                    hover ? IM_COL32(255, 128, 0, 255)
-                                          : IM_COL32(200, 200, 200, 180));
-                if (clicked && hover) {
-                    m_ui.editTarget = {};
-                    m_ui.editTarget.path = std::string(e.Path.begin(), e.Path.end());
-                    m_ui.editTarget.name = m_ui.editTarget.path;
-                    m_ui.editTarget.category = "User";
-                    m_ui.editTarget.enabled = true;
-                    m_ui.editAreaKey = m_overlay.targets.ResolveAreaKey(snap.CurrentAreaHash,
-                                                                        snap.CurrentAreaName);
-                    m_ui.editIsNew = true;
-                    m_ui.editModalOpen = true;
-                    EndPickerMode();
+                const float distSq = dx * dx + dy * dy;
+                if (distSq < nearestDistSq) {
+                    nearestDistSq = distSq;
+                    nearestEnt = &e;
                 }
+            }
+
+            if (nearestEnt) {
+                for (const auto& e : snap.Entities) {
+                    if (!e.IsValid) continue;
+                    if (e.EntityState == PluginSDK::EntityState::Useless) continue;
+                    if (e.EntityType != PluginSDK::EntityType::Monster
+                        && e.EntityType != PluginSDK::EntityType::Chest
+                        && e.EntityType != PluginSDK::EntityType::NPC)
+                        continue;
+                    const auto scr = RadarRender::ProjectEntityToScreen(gameCtx, snap, e);
+                    if (!scr.valid) continue;
+                    const float dx = mouse.x - scr.sx;
+                    const float dy = mouse.y - scr.sy;
+                    const float distSq = dx * dx + dy * dy;
+                    if (distSq >= kPickerRadiusSq) continue;
+                    const bool isNearest = &e == nearestEnt;
+                    dl->AddCircleFilled(ImVec2(scr.sx, scr.sy), isNearest ? 8.f : 5.f,
+                                        isNearest ? IM_COL32(255, 128, 0, 255)
+                                                  : IM_COL32(200, 200, 200, 120));
+                }
+                const std::string path(nearestEnt->Path.begin(), nearestEnt->Path.end());
+                dl->AddText(ImVec2(12.f, 32.f), IM_COL32(255, 200, 150, 255), path.c_str());
+            }
+
+            if (clicked && nearestEnt) {
+                m_ui.editTarget = {};
+                std::string path(nearestEnt->Path.begin(), nearestEnt->Path.end());
+                if (path.find('*') == std::string::npos) path += '*';
+                m_ui.editTarget.path = path;
+                m_ui.editTarget.name = PathBaseName(path);
+                m_ui.editTarget.category = "User";
+                m_ui.editTarget.enabled = true;
+                m_ui.editTarget.showIcon = true;
+                m_ui.editTarget.expectedCount = 1;
+                m_ui.editAreaKey = m_overlay.targets.ResolveAreaKey(snap.CurrentAreaHash,
+                                                                    snap.CurrentAreaName);
+                m_ui.editIsNew = true;
+                m_ui.editStorageIndex = SIZE_MAX;
+                m_ui.editModalOpen = true;
+                EndPickerMode();
             }
         }
 
         dl->AddText(ImVec2(12, 12), IM_COL32(255, 255, 255, 255),
-                    m_ui.pickerPoiMode ? "Click a POI on the map (Esc to cancel)"
-                                       : "Click an entity on the map (Esc to cancel)");
+                    m_ui.pickerPoiMode
+                        ? "Click nearest yellow marker (cyan = selected, Esc to cancel)"
+                        : "Click nearest entity marker (Esc to cancel)");
     }
 };
 

@@ -57,6 +57,7 @@ public:
         if (cache.NeedsFullRebuild(snap, walkable.Data())) {
             cache.RebuildAll(ctx, snap, walkable, cfg, targets, icons);
         } else {
+            cache.PollPoiDiscovery(ctx, snap, cfg, targets);
             cache.RebuildPoiIfNeeded(ctx, snap, cfg, targets, icons);
             if (cache.NeedsEntityRebuild(snap))
                 cache.RebuildEntitiesOnly(ctx, snap, cfg, targets, icons);
@@ -81,6 +82,8 @@ public:
                                 ctx, &snap);
                 cache.pois.DrawEdgeIndicators(ctx, dl, snap.LargeMap, cfg.EdgeIndicatorLargemap,
                                               false);
+            } else {
+                cache.pois.Clear();
             }
         } else if (snap.MiniMap.IsVisible) {
             MapClipScope clip(dl, snap.MiniMap, true);
@@ -94,6 +97,8 @@ public:
                 cache.pois.Draw(dl, atlas, cfg, cfg.EdgeIndicatorLargemap, cfg.EdgeIndicatorMinimap,
                                 ctx, &snap);
                 cache.pois.DrawEdgeIndicators(ctx, dl, snap.MiniMap, cfg.EdgeIndicatorMinimap, true);
+            } else {
+                cache.pois.Clear();
             }
         }
     }

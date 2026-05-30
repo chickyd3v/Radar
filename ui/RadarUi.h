@@ -32,6 +32,7 @@ struct UiState {
     RadarData::TargetEntry editTarget;
     std::string editAreaKey;
     bool        editIsNew = false;
+    size_t      editStorageIndex = SIZE_MAX;
 };
 
 inline void DrawIconPicker(UiState& ui, RadarRender::IconAtlas& atlas, RadarData::IconTables& icons) {
@@ -214,7 +215,8 @@ inline void DrawTargetIndicesTable(RadarData::TargetDatabase& db,
                                    const std::vector<size_t>& indices,
                                    const std::string& areaKey, UiState& ui,
                                    RadarRender::RadarOverlay& overlay,
-                                   RadarRender::IconAtlas& atlas) {
+                                   RadarRender::IconAtlas& atlas,
+                                   const std::filesystem::path& pluginDir) {
     if (indices.empty()) return;
 
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(6.f, 3.f));
@@ -242,9 +244,18 @@ inline void DrawTargetIndicesTable(RadarData::TargetDatabase& db,
         auto& t = db.storage[idx];
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        ImGui::Checkbox(("##en" + std::to_string(idx)).c_str(), &t.enabled);
+        bool enabled = t.enabled;
+        if (ImGui::Checkbox(("##en" + std::to_string(idx)).c_str(), &enabled)) {
+            t.enabled = enabled;
+            overlay.cache.InvalidatePoi();
+            if (t.category == "User") db.SaveUser(pluginDir);
+        }
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(t.name.c_str());
+        if (t.category == "User") {
+            ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.f, 1.f), "%s", t.name.c_str());
+        } else {
+            ImGui::TextUnformatted(t.name.c_str());
+        }
         ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(t.path.c_str());
         ImGui::TableSetColumnIndex(3);
@@ -263,6 +274,7 @@ inline void DrawTargetIndicesTable(RadarData::TargetDatabase& db,
             ui.editTarget = t;
             ui.editAreaKey = areaKey;
             ui.editIsNew = false;
+            ui.editStorageIndex = idx;
             ui.editModalOpen = true;
         }
         PopPoiActionButtonStyle();
@@ -271,7 +283,12 @@ inline void DrawTargetIndicesTable(RadarData::TargetDatabase& db,
         ImGui::PushID(static_cast<int>(idx * 2 + 1));
         PushPoiActionButtonStyle();
         if (ImGui::Button("X", ImVec2(22.f, 20.f))) {
-            t.enabled = false;
+            if (t.category == "User") {
+                db.RemoveUserTargetFromArea(idx, areaKey);
+                db.SaveUser(pluginDir);
+            } else {
+                t.enabled = false;
+            }
             overlay.cache.InvalidatePoi();
         }
         PopPoiActionButtonStyle();
@@ -284,20 +301,22 @@ inline void DrawTargetIndicesTable(RadarData::TargetDatabase& db,
 
 inline void DrawAreaTargetTable(RadarData::TargetDatabase& db, const std::string& areaKey,
                                 UiState& ui, RadarRender::RadarOverlay& overlay,
-                                RadarRender::IconAtlas& atlas) {
+                                RadarRender::IconAtlas& atlas,
+                                const std::filesystem::path& pluginDir) {
     const std::string key = RadarData::NormalizeAreaKey(areaKey);
     if (key == "*" || key == "GLOBAL") {
-        DrawTargetIndicesTable(db, db.actsGlobalTargets, key, ui, overlay, atlas);
+        DrawTargetIndicesTable(db, db.actsGlobalTargets, key, ui, overlay, atlas, pluginDir);
         return;
     }
     auto it = db.byArea.find(key);
     if (it == db.byArea.end()) return;
-    DrawTargetIndicesTable(db, it->second, key, ui, overlay, atlas);
+    DrawTargetIndicesTable(db, it->second, key, ui, overlay, atlas, pluginDir);
 }
 
 inline bool DrawAreaSubNode(RadarData::TargetDatabase& db, const std::string& areaKey,
                             const std::string& label, bool isCurrent, bool defaultOpen,
-                            UiState& ui, RadarRender::RadarOverlay& overlay) {
+                            UiState& ui, RadarRender::RadarOverlay& overlay,
+                            const std::filesystem::path& pluginDir) {
     ImGui::PushID(areaKey.c_str());
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
     if (defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
@@ -305,7 +324,7 @@ inline bool DrawAreaSubNode(RadarData::TargetDatabase& db, const std::string& ar
     const bool open = ImGui::TreeNodeEx(label.c_str(), flags);
     if (isCurrent) ImGui::PopStyleColor();
     if (open) {
-        DrawAreaTargetTable(db, areaKey, ui, overlay, overlay.atlas);
+        DrawAreaTargetTable(db, areaKey, ui, overlay, overlay.atlas, pluginDir);
         ImGui::TreePop();
     }
     ImGui::PopID();
@@ -317,35 +336,77 @@ inline std::string ResolveCurrentAreaKey(const PluginSDK::Snapshot& snap,
     return db.ResolveAreaKey(snap.CurrentAreaHash, snap.CurrentAreaName);
 }
 
+// Campaign custom areas (User) appear under Acts; maps under Endgame.
+inline std::string ResolveCurrentAreaSection(const RadarData::TargetDatabase& db,
+                                             const std::string& currentArea) {
+    if (currentArea.empty()) return "Acts";
+    const std::string key = RadarData::NormalizeAreaKey(currentArea);
+    if (auto it = db.areaSource.find(key); it != db.areaSource.end()) {
+        if (it->second == "Endgame") return "Endgame";
+        return "Acts";
+    }
+    if (key.size() >= 3
+        && (key.rfind("MAP", 0) == 0 || key.rfind("SANCTUM", 0) == 0))
+        return "Endgame";
+    return "Acts";
+}
+
+inline std::vector<std::string> CollectAreasForSection(const RadarData::TargetDatabase& db,
+                                                       const std::string& sourceKey) {
+    std::vector<std::string> areas = db.ListAreas(sourceKey);
+    if (sourceKey != "Acts") return areas;
+
+    for (const std::string& ua : db.ListUserAreas()) {
+        const bool already = std::any_of(areas.begin(), areas.end(),
+                                         [&](const std::string& a) {
+                                             return RadarData::AreaKeysEqual(a, ua);
+                                         });
+        if (!already) areas.push_back(ua);
+    }
+    std::sort(areas.begin(), areas.end());
+    return areas;
+}
+
 inline void DrawAreaTreeSection(RadarData::TargetDatabase& db, const std::string& sourceLabel,
                                 const std::string& sourceKey, const std::string& currentArea,
-                                UiState& ui, RadarRender::RadarOverlay& overlay) {
-    const auto areas = db.ListAreas(sourceKey);
+                                bool pinCurrentFirst, UiState& ui,
+                                RadarRender::RadarOverlay& overlay,
+                                const std::filesystem::path& pluginDir) {
+    auto areas = CollectAreasForSection(db, sourceKey);
     const bool hasGlobal = !db.actsGlobalTargets.empty() && sourceKey == "Acts";
-    if (areas.empty() && !hasGlobal && sourceKey != "Endgame") return;
+    const bool hasCurrentBucket =
+        !currentArea.empty() && pinCurrentFirst
+        && (db.HasAreaBucket(currentArea)
+            || db.byArea.find(RadarData::NormalizeAreaKey(currentArea)) != db.byArea.end());
+    if (areas.empty() && !hasGlobal && !hasCurrentBucket) return;
 
     const bool sectionOpen =
         DrawPoiCategoryHeader(sourceKey.c_str(), sourceLabel.c_str(), sourceKey == "Acts");
     if (!sectionOpen) return;
 
     if (hasGlobal && sourceKey == "Acts") {
-        DrawAreaSubNode(db, "*", "Global", false, true, ui, overlay);
+        DrawAreaSubNode(db, "*", "Global", false, true, ui, overlay, pluginDir);
     }
 
-    if (!currentArea.empty()) {
-        const bool inThisSource =
-            db.areaSource.count(currentArea)
-            && db.areaSource.at(currentArea) == sourceKey;
-        if (inThisSource) {
-            std::string label = db.DisplayNameForArea(currentArea) + " [Current Location]";
-            DrawAreaSubNode(db, currentArea, label, true, true, ui, overlay);
-        }
+    auto drawAreaNode = [&](const std::string& area, bool isCurrent) {
+        std::string label = db.DisplayNameForArea(area);
+        if (isCurrent) label += " [Current]";
+        DrawAreaSubNode(db, area, label, isCurrent, isCurrent, ui, overlay, pluginDir);
+    };
+
+    if (hasCurrentBucket) {
+        const std::string key = RadarData::NormalizeAreaKey(currentArea);
+        const bool inList = std::any_of(areas.begin(), areas.end(),
+                                        [&](const std::string& a) {
+                                            return RadarData::AreaKeysEqual(a, key);
+                                        });
+        if (!inList) areas.insert(areas.begin(), key);
+        drawAreaNode(key, true);
     }
 
     for (const std::string& area : areas) {
-        if (!currentArea.empty() && RadarData::AreaKeysEqual(area, currentArea)) continue;
-        const std::string label = db.DisplayNameForArea(area);
-        DrawAreaSubNode(db, area, label, false, false, ui, overlay);
+        if (hasCurrentBucket && RadarData::AreaKeysEqual(area, currentArea)) continue;
+        drawAreaNode(area, false);
     }
 
     ImGui::TreePop();
@@ -373,19 +434,16 @@ inline void DrawEditTargetModal(UiState& ui, RadarData::TargetDatabase& db,
     ImGui::Checkbox("Show as Icon", &ui.editTarget.showIcon);
     if (ui.editTarget.showIcon) ImGui::DragFloat("Icon Size", &ui.editTarget.iconSize, 1, 5, 80);
     if (ImGui::Button("Save", ImVec2(90, 0))) {
+        const bool wasNew = ui.editIsNew;
         if (ui.editIsNew) {
             db.AddUserTarget(ui.editAreaKey, ui.editTarget);
-            db.SaveUser(pluginDir);
-        } else {
-            for (auto& t : db.storage) {
-                if (t.name == ui.editTarget.name && t.path == ui.editTarget.path) {
-                    t = ui.editTarget;
-                    break;
-                }
-            }
+        } else if (ui.editStorageIndex < db.storage.size()) {
+            db.storage[ui.editStorageIndex] = ui.editTarget;
         }
+        if (wasNew || ui.editTarget.category == "User") db.SaveUser(pluginDir);
         overlay.cache.InvalidatePoi();
         ui.editModalOpen = false;
+        ui.editStorageIndex = SIZE_MAX;
     }
     ImGui::SameLine();
     if (ImGui::Button("Cancel", ImVec2(90, 0))) ui.editModalOpen = false;
@@ -406,8 +464,16 @@ inline void DrawObjectsTab(RadarData::RadarConfig& cfg, RadarData::TargetDatabas
     ImGui::Checkbox("Multicolor", &multicolor);
     ImGui::EndDisabled();
 
-    ImGui::Checkbox("Points of Interest (POI)", &cfg.ShowImportantPOI);
-    ImGui::SameLine(0.f, 24.f);
+    if (ImGui::Checkbox("Points of Interest (POI)", &cfg.ShowImportantPOI)) {
+        overlay.cache.InvalidatePoi();
+        if (!cfg.ShowImportantPOI) overlay.cache.pois.Clear();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Show/hide POI labels and markers on the map overlay.\n"
+                          "The table below always lists configured targets.");
+    ImGui::SameLine(0.f, 8.f);
     ImGui::Checkbox("Text Background", &cfg.EnablePOIBackground);
 
     if (ImGui::Button("Add POI from Map", ImVec2(0, 0))) {
@@ -421,12 +487,15 @@ inline void DrawObjectsTab(RadarData::RadarConfig& cfg, RadarData::TargetDatabas
     }
 
     const std::string currentArea = ResolveCurrentAreaKey(snap, db);
+    const std::string currentSection = ResolveCurrentAreaSection(db, currentArea);
 
     ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 14.f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6.f, 4.f));
     ImGui::BeginChild("##poiTree", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-    DrawAreaTreeSection(db, "Endgame", "Endgame", currentArea, ui, overlay);
-    DrawAreaTreeSection(db, "Acts (Level < 65)", "Acts", currentArea, ui, overlay);
+    DrawAreaTreeSection(db, "Endgame", "Endgame", currentArea, currentSection == "Endgame",
+                        ui, overlay, pluginDir);
+    DrawAreaTreeSection(db, "Acts (Level < 65)", "Acts", currentArea, currentSection != "Endgame",
+                        ui, overlay, pluginDir);
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
 

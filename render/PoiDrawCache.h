@@ -9,6 +9,7 @@
 #include "data/IconTables.h"
 #include "sdk/PluginSDK.h"
 
+#include <algorithm>
 #include <cmath>
 #include <imgui.h>
 #include <optional>
@@ -20,7 +21,6 @@ namespace RadarRender {
 
 struct PoiDrawCache {
     std::vector<RadarData::PoiResolved> pois;
-    bool                                textBackground = true;
     uint64_t                            lastDrawLogTime = 0;
 
     static RadarData::IconDef ResolvePoiIcon(const RadarData::TargetEntry& t,
@@ -40,6 +40,48 @@ struct PoiDrawCache {
     }
 
     void Clear() { pois.clear(); }
+
+    static int CountMatchingTgtLocations(
+        PluginSDK::Context* ctx, const std::vector<const RadarData::TargetEntry*>& targets) {
+        if (!ctx || targets.empty()) return 0;
+        std::vector<RadarData::CompiledPattern> compiled;
+        compiled.reserve(targets.size());
+        for (const auto* t : targets) compiled.push_back(RadarData::CompilePattern(t->path));
+        int matches = 0;
+        ctx->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+            for (const auto& pat : compiled) {
+                if (RadarData::MatchPattern(pat, loc.Path)) {
+                    ++matches;
+                    break;
+                }
+            }
+            return true;
+        });
+        return matches;
+    }
+
+    static int CountMatchingEntities(
+        const PluginSDK::Snapshot& snap,
+        const std::vector<const RadarData::TargetEntry*>& targets) {
+        if (targets.empty()) return 0;
+        std::vector<RadarData::CompiledPattern> compiled;
+        compiled.reserve(targets.size());
+        for (const auto* t : targets) compiled.push_back(RadarData::CompilePattern(t->path));
+        auto wpath = [](const std::wstring& p) { return std::string(p.begin(), p.end()); };
+        int matches = 0;
+        for (const auto& e : snap.Entities) {
+            if (!e.IsValid) continue;
+            const std::string path = wpath(e.Path);
+            if (path.empty()) continue;
+            for (const auto& pat : compiled) {
+                if (RadarData::MatchPattern(pat, path)) {
+                    ++matches;
+                    break;
+                }
+            }
+        }
+        return matches;
+    }
 
     void UpdateScreenPositions(PluginSDK::Context* ctx, const PluginSDK::Snapshot& snap) {
         for (auto& p : pois) {
@@ -99,7 +141,6 @@ struct PoiDrawCache {
                  const RadarData::IconTables& icons) {
         Clear();
         if (!ctx || !cfg.ShowImportantPOI) return;
-        textBackground = cfg.EnablePOIBackground;
 
         const std::string areaKey =
             db.ResolveAreaKey(snap.CurrentAreaHash, snap.CurrentAreaName);
@@ -155,47 +196,55 @@ struct PoiDrawCache {
             centX *= invN;
             centY *= invN;
 
-            float bestGx = 0.f, bestGy = 0.f;
-            float bestScore = -1e30f;
+            struct ScoredCand {
+                float gx = 0.f;
+                float gy = 0.f;
+                float score = 0.f;
+            };
+            std::vector<ScoredCand> scored;
+            scored.reserve(perTarget[i].size());
             for (const TgtCand& c : perTarget[i]) {
-                bool tooClose = false;
-                for (const auto& placed : pois) {
-                    if (std::hypot(c.gx - placed.gridX, c.gy - placed.gridY) < kMinPoiGridSep) {
-                        tooClose = true;
-                        break;
-                    }
-                }
-                if (tooClose) continue;
-
                 float score = -std::hypot(c.gx - centX, c.gy - centY);
                 if (ctx->Terrain.IsWalkable(static_cast<int>(c.gx), static_cast<int>(c.gy)))
                     score += 500.f;
                 if (snap.LargeMap.IsVisible || snap.MiniMap.IsVisible) {
                     if (ProjectTgtToMapScreen(ctx, snap, c.gx, c.gy).valid) score += 5000.f;
                 }
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestGx = c.gx;
-                    bestGy = c.gy;
-                }
+                scored.push_back({c.gx, c.gy, score});
             }
-            if (bestScore < -1e20f) continue;
+            std::sort(scored.begin(), scored.end(),
+                      [](const ScoredCand& a, const ScoredCand& b) { return a.score > b.score; });
 
-            RadarData::PoiResolved p;
-            p.name = t->name;
-            p.gridX = bestGx;
-            p.gridY = bestGy;
-            p.terrainZ = 0.f;
-            p.fromTgt = true;
-            p.showIcon = t->showIcon;
-            p.iconSize = t->iconSize > 0 ? t->iconSize : 30.f;
-            const auto iconDef = ResolvePoiIcon(*t, icons);
-            p.iconCx = iconDef.cx;
-            p.iconCy = iconDef.cy;
-            p.nameColor = t->nameColor;
-            p.bgColor = t->bgColor;
-            pois.push_back(std::move(p));
-            ++tgtHits;
+            const int want = std::clamp(t->expectedCount, 1, 32);
+            int placed = 0;
+            for (const ScoredCand& sc : scored) {
+                if (placed >= want) break;
+                bool tooClose = false;
+                for (const auto& existing : pois) {
+                    if (std::hypot(sc.gx - existing.gridX, sc.gy - existing.gridY) < kMinPoiGridSep) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) continue;
+
+                RadarData::PoiResolved p;
+                p.name = t->name;
+                p.gridX = sc.gx;
+                p.gridY = sc.gy;
+                p.terrainZ = 0.f;
+                p.fromTgt = true;
+                p.showIcon = t->showIcon;
+                p.iconSize = t->iconSize > 0 ? t->iconSize : 30.f;
+                const auto iconDef = ResolvePoiIcon(*t, icons);
+                p.iconCx = iconDef.cx;
+                p.iconCy = iconDef.cy;
+                p.nameColor = t->nameColor;
+                p.bgColor = t->bgColor;
+                pois.push_back(std::move(p));
+                ++placed;
+                ++tgtHits;
+            }
         }
 
         auto wpath = [](const std::wstring& p) { return std::string(p.begin(), p.end()); };
@@ -226,7 +275,9 @@ struct PoiDrawCache {
         }
 
         log << " resolved=" << pois.size() << " tgtHits=" << tgtHits << " entHits=" << entHits
-            << " tgtEnum=" << tgtEnum;
+            << " tgtEnum=" << tgtEnum << " enabledTargets=" << targets.size();
+        for (size_t i = 0; i < targets.size() && i < 4; ++i)
+            log << " t" << i << "='" << targets[i]->name << "' en=" << targets[i]->enabled;
         if (!pois.empty()) {
             log << " firstPoi='" << pois.front().name << "' grid=(" << pois.front().gridX << ","
                 << pois.front().gridY << ")";
@@ -248,7 +299,8 @@ struct PoiDrawCache {
             ++visible;
             const ImU32 nameCol = p.nameColor.ToImU32();
 
-            if (cfg.DrawPoiIcons && p.showIcon && atlas.Valid()) {
+            const bool drawIcon = cfg.DrawPoiIcons && p.showIcon && atlas.Valid();
+            if (drawIcon) {
                 atlas.DrawIcon(dl, p.iconCx, p.iconCy, p.iconSize, p.screenX, p.screenY, nameCol);
                 ++iconDrawn;
             } else {
@@ -259,7 +311,7 @@ struct PoiDrawCache {
             const char* label = p.name.c_str();
             ImVec2 ts = ImGui::CalcTextSize(label);
             ImVec2 pos(p.screenX - ts.x * 0.5f, p.screenY - ts.y - 8.f);
-            if (textBackground)
+            if (cfg.EnablePOIBackground)
                 dl->AddRectFilled(ImVec2(pos.x - 2, pos.y - 1),
                                   ImVec2(pos.x + ts.x + 2, pos.y + ts.y + 1),
                                   p.bgColor.ToImU32());
