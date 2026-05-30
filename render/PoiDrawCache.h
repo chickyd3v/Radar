@@ -287,26 +287,29 @@ struct PoiDrawCache {
         }
     }
 
-    void DrawEdgeIndicators(ImDrawList* dl, const PluginSDK::MapData& map, bool enabled,
-                          bool minimap) const {
+    void DrawEdgeIndicators(PluginSDK::Context* ctx, ImDrawList* dl,
+                            const PluginSDK::MapData& map, bool enabled,
+                            bool minimap) const {
         if (!dl || !enabled || !map.IsVisible) return;
         const float margin = 8.f;
 
         for (const auto& p : pois) {
             if (!p.hasScreen) continue;
-            if (IsInsideMapViewport(map, p.screenX, p.screenY, minimap)) continue;
+            if (IsInsideMapViewport(ctx, map, p.screenX, p.screenY, minimap)) continue;
 
             float sx = p.screenX;
             float sy = p.screenY;
             if (minimap) {
                 const float radius = std::min(map.SizeX, map.SizeY) * 0.5f - margin;
                 if (radius > 1.f) {
-                    const float dx = sx - map.CenterX;
-                    const float dy = sy - map.CenterY;
+                    float clipCx = map.CenterX, clipCy = map.CenterY;
+                    GetMinimapClipOrigin(ctx, map, clipCx, clipCy);
+                    const float dx = sx - clipCx;
+                    const float dy = sy - clipCy;
                     const float len = std::sqrt(dx * dx + dy * dy);
                     if (len > 0.001f) {
-                        sx = map.CenterX + dx * (radius / len);
-                        sy = map.CenterY + dy * (radius / len);
+                        sx = clipCx + dx * (radius / len);
+                        sy = clipCy + dy * (radius / len);
                     }
                 }
             } else {

@@ -47,19 +47,52 @@ inline float MinimapClipRadius(const PluginSDK::MapData& map, float inset = 10.f
     return std::max(1.f, std::min(map.SizeX, map.SizeY) * 0.5f - inset);
 }
 
-inline bool IsInsideMinimapDisc(const PluginSDK::MapData& map, float sx, float sy,
-                                float inset = 10.f) {
-    if (!map.IsVisible) return false;
-    const float radius = MinimapClipRadius(map, inset);
-    if (radius <= 1.f) return IsInsideMapRect(map, sx, sy, inset);
-    const float dx = sx - map.CenterX;
-    const float dy = sy - map.CenterY;
-    return (dx * dx + dy * dy) <= (radius * radius);
+// GridToMiniMap projects around GetMiniMapTransform().Center, not MapData.Center (host Y often wrong).
+inline void GetMinimapClipOrigin(PluginSDK::Context* ctx, const PluginSDK::MapData& map,
+                                 float& cx, float& cy) {
+    cx = map.CenterX;
+    cy = map.CenterY;
+    if (!ctx) return;
+    const auto t = ctx->Render.GetMiniMapTransform();
+    if (t.IsVisible) {
+        cx = t.CenterX;
+        cy = t.CenterY;
+    }
 }
 
-inline bool IsInsideMapViewport(const PluginSDK::MapData& map, float sx, float sy,
-                                bool minimap) {
-    return minimap ? IsInsideMinimapDisc(map, sx, sy) : IsInsideMapRect(map, sx, sy);
+inline float MinimapSurfaceRadius(const PluginSDK::MapData& map, float inset = 6.f) {
+    if (!map.IsVisible) return 0.f;
+    return std::max(20.f, std::min(map.SizeX, map.SizeY) * 0.5f - inset);
+}
+
+inline bool IsOnMinimapSurface(PluginSDK::Context* ctx, const PluginSDK::MapData& map,
+                               float sx, float sy, float inset = 6.f) {
+    if (!map.IsVisible) return false;
+    float cx = 0.f, cy = 0.f;
+    GetMinimapClipOrigin(ctx, map, cx, cy);
+    const float r = MinimapSurfaceRadius(map, inset);
+    const float dx = sx - cx;
+    const float dy = sy - cy;
+    return (dx * dx + dy * dy) <= (r * r);
+}
+
+inline bool IsInsideMinimapDisc(PluginSDK::Context* ctx, const PluginSDK::MapData& map,
+                                float sx, float sy, float inset = 10.f) {
+    return IsOnMinimapSurface(ctx, map, sx, sy, inset);
+}
+
+inline bool MiniMapGridLooksLikeViewport(PluginSDK::Context* ctx,
+                                         const PluginSDK::Snapshot& snap, float sx, float sy) {
+    if (IsOnMinimapSurface(ctx, snap.MiniMap, sx, sy)) return false;
+    if (snap.ScreenWidth <= 1 || snap.ScreenHeight <= 1) return false;
+    constexpr float margin = 12.f;
+    return sx >= margin && sx < snap.ScreenWidth - margin && sy >= margin
+           && sy < snap.ScreenHeight - margin;
+}
+
+inline bool IsInsideMapViewport(PluginSDK::Context* ctx, const PluginSDK::MapData& map,
+                                float sx, float sy, bool minimap) {
+    return minimap ? IsInsideMinimapDisc(ctx, map, sx, sy) : IsInsideMapRect(map, sx, sy);
 }
 
 inline void PushLargeMapClipRect(ImDrawList* dl, const PluginSDK::MapData& map) {
@@ -123,7 +156,7 @@ inline ProjectedScreen ProjectGridToMiniMapScreen(PluginSDK::Context* ctx,
     if (!ctx || !snap.MiniMap.IsVisible) return out;
 
     if (ctx->Render.GridToMiniMap(gx, gy, worldZ, out.sx, out.sy)
-        && IsInsideMinimapDisc(snap.MiniMap, out.sx, out.sy, discInset)) {
+        && IsOnMinimapSurface(ctx, snap.MiniMap, out.sx, out.sy, discInset)) {
         out.valid = true;
         return out;
     }
@@ -134,7 +167,7 @@ inline ProjectedScreen ProjectGridToMiniMapScreen(PluginSDK::Context* ctx,
     const float wtg = WorldToGridScale(snap, ctx);
     float sx = 0.f, sy = 0.f;
     if (ProjectWithMapTransform(t, gx, gy, worldZ, wtg, sx, sy)
-        && IsInsideMinimapDisc(snap.MiniMap, sx, sy, discInset)) {
+        && IsOnMinimapSurface(ctx, snap.MiniMap, sx, sy, discInset)) {
         out.sx = sx;
         out.sy = sy;
         out.valid = true;
@@ -161,7 +194,7 @@ inline ProjectedScreen ProjectTgtToMiniMapScreen(PluginSDK::Context* ctx,
     ProjectedScreen out;
     if (!ctx || !snap.MiniMap.IsVisible) return out;
     if (ctx->Render.GridToMiniMap(gx, gy, 0.f, out.sx, out.sy)
-        && IsInsideMinimapDisc(snap.MiniMap, out.sx, out.sy)) {
+        && IsOnMinimapSurface(ctx, snap.MiniMap, out.sx, out.sy)) {
         out.valid = true;
     }
     return out;
@@ -211,13 +244,46 @@ inline ProjectedScreen ProjectGridToScreen(PluginSDK::Context* ctx,
     return out;
 }
 
+// Entities on minimap: GridToMiniMap is correct for off-screen targets; on-screen targets can
+// return main-viewport coords. Use MapTransform only in that case. Always require on-surface clip.
+inline ProjectedScreen ProjectEntityToMiniMapScreen(PluginSDK::Context* ctx,
+                                                    const PluginSDK::Snapshot& snap,
+                                                    float gx, float gy, float terrainZ) {
+    ProjectedScreen out;
+    if (!ctx || !snap.MiniMap.IsVisible) return out;
+
+    constexpr float kInset = 8.f;
+    float sx = 0.f, sy = 0.f;
+    const bool gridOk = ctx->Render.GridToMiniMap(gx, gy, terrainZ, sx, sy);
+    if (gridOk && IsOnMinimapSurface(ctx, snap.MiniMap, sx, sy, kInset)) {
+        out.sx = sx;
+        out.sy = sy;
+        out.valid = true;
+        return out;
+    }
+
+    const bool needTransform = !gridOk || MiniMapGridLooksLikeViewport(ctx, snap, sx, sy);
+    if (needTransform) {
+        const float wtg = WorldToGridScale(snap, ctx);
+        const auto t = ctx->Render.GetMiniMapTransform();
+        float tsx = 0.f, tsy = 0.f;
+        if (t.IsVisible && ProjectWithMapTransform(t, gx, gy, terrainZ, wtg, tsx, tsy)
+            && IsOnMinimapSurface(ctx, snap.MiniMap, tsx, tsy, kInset)) {
+            out.sx = tsx;
+            out.sy = tsy;
+            out.valid = true;
+        }
+    }
+    return out;
+}
+
 inline ProjectedScreen ProjectEntityGridToScreen(PluginSDK::Context* ctx,
                                                  const PluginSDK::Snapshot& snap,
                                                  float gx, float gy, float terrainZ) {
     if (snap.LargeMap.IsVisible)
         return ProjectGridToLargeMapScreen(ctx, snap, gx, gy, terrainZ);
     if (snap.MiniMap.IsVisible)
-        return ProjectGridToMiniMapScreen(ctx, snap, gx, gy, terrainZ, 8.f, true);
+        return ProjectEntityToMiniMapScreen(ctx, snap, gx, gy, terrainZ);
     return {};
 }
 

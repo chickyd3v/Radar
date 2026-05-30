@@ -79,7 +79,8 @@ public:
                 cache.pois.UpdateScreenPositions(ctx, snap);
                 cache.pois.Draw(dl, atlas, cfg, cfg.EdgeIndicatorLargemap, cfg.EdgeIndicatorMinimap,
                                 ctx, &snap);
-                cache.pois.DrawEdgeIndicators(dl, snap.LargeMap, cfg.EdgeIndicatorLargemap, false);
+                cache.pois.DrawEdgeIndicators(ctx, dl, snap.LargeMap, cfg.EdgeIndicatorLargemap,
+                                              false);
             }
         } else if (snap.MiniMap.IsVisible) {
             MapClipScope clip(dl, snap.MiniMap, true);
@@ -92,7 +93,7 @@ public:
                 cache.pois.UpdateScreenPositions(ctx, snap);
                 cache.pois.Draw(dl, atlas, cfg, cfg.EdgeIndicatorLargemap, cfg.EdgeIndicatorMinimap,
                                 ctx, &snap);
-                cache.pois.DrawEdgeIndicators(dl, snap.MiniMap, cfg.EdgeIndicatorMinimap, true);
+                cache.pois.DrawEdgeIndicators(ctx, dl, snap.MiniMap, cfg.EdgeIndicatorMinimap, true);
             }
         }
     }

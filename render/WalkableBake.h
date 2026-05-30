@@ -66,12 +66,12 @@ struct WalkableBake {
                                                   static_cast<float>(c.gy), c.z);
             } else {
                 scr = ProjectGridToMiniMapScreen(ctx, snap, static_cast<float>(c.gx),
-                                                 static_cast<float>(c.gy), c.z, 12.f, false);
+                                                 static_cast<float>(c.gy), c.z, 10.f, true);
             }
             if (!scr.valid) continue;
             if (useLargeMap) {
                 if (!IsInsideMapRect(map, scr.sx, scr.sy)) continue;
-            } else if (!IsInsideMinimapDisc(map, scr.sx, scr.sy, 12.f)) {
+            } else if (!IsOnMinimapSurface(ctx, map, scr.sx, scr.sy, 10.f)) {
                 continue;
             }
             dl->AddRectFilled(ImVec2(scr.sx, scr.sy), ImVec2(scr.sx + 1.f, scr.sy + 1.f),
