@@ -1,0 +1,21 @@
+{
+  "OverlayEnabled": true,
+  "DrawWhenNotInHideoutOrTown": true,
+  "DrawWhenNotPaused": true,
+  "HideWhenNotForeground": true,
+  "HideOutsideNetworkBubble": false,
+  "DrawWalkableMap": true,
+  "WalkableMapBorderThickness": 0,
+  "WalkableDecimation": 4,
+  "ShowPlayerNames": false,
+  "ShowImportantPOI": true,
+  "DrawPoiIcons": false,
+  "EnablePOIBackground": true,
+  "EdgeIndicatorMinimap": true,
+  "EdgeIndicatorLargemap": true,
+  "LargeMapScaleMultiplier": 0.1738000065088272,
+  "WalkableMapColor": [0.46, 0.46, 0.46, 0.7],
+  "POIColor": [1.0, 1.0, 0.5, 1.0],
+  "MaxEntitiesDrawn": 512,
+  "MainMenuSize": [900.0, 600.0]
+}

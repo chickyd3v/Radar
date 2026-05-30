@@ -1,54 +1,58 @@
-# Radar — POE2Fixer Plugin SDK Example
+# Radar — Official POE2Fixer Plugin
 
-Minimal radar overlay plugin demonstrating the v6 Plugin SDK. Draws
-monsters / NPCs / chests / area transitions and the walkable map onto
-the in-game large map.
+Self-contained radar overlay for Path of Exile 2: walkable terrain map, entity icons, and POI labels. Replaces the host built-in Radar module. **No pathfinder / path lines.**
 
-## What It Does
+## Performance
 
-Hooks into POE2Fixer's plugin system. When enabled, it draws colored
-dots on the in-game large map for nearby entities, plus a translucent
-walkable-tile overlay. Per-rarity monster colors, NPCs, chests
-(closed vs opened), and area transitions are configurable from the
-Plugins settings tab inside POE2Fixer.
+- Overlay draws from **baked caches** rebuilt on area change only (not per frame).
+- Walkable mesh is decimated (default 4×) and pre-projected to screen space.
+- POI targets use `EnumerateTgtLocations` once per area, not every frame.
+- `SetIncludeSleepingEntities` is enabled **only** during Add POI / Add Entity map picker.
 
-## Building
+## Install
 
-Open `Radar.sln` in Visual Studio 2022. Build Release|x64. Output:
-
-    bin/Release/Radar.dll
-
-Or from command line:
-```
-"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" Radar.sln -p:Configuration=Release -p:Platform=x64
-```
-
-## Installing
-
-Copy the folder (or just the built DLL) into POE2Fixer's plugin
-directory:
-
-    POE2Fixer/Plugins/Radar/Radar.dll
-
-Restart POE2Fixer. Enable Radar in the Plugins tab.
-
-## Source
-
-The same source is shipped inside the main POE2Fixer repo at
-`Plugins/Radar/`. This standalone repo is for plugin authors who
-want to fork it as a template.
-
-## SDK Version
-
-This plugin targets v6 of the Plugin SDK. The bundled `sdk/` headers
-must match the host POE2Fixer's expected SDK version (run-time check
-will refuse mismatched plugins with a clear log entry).
-
-## Project Structure
+1. Build `Radar.sln` Release|x64 → `bin/Release/Radar.dll`
+2. Copy into POE2Fixer:
 
 ```
-sdk/            Plugin SDK headers (PluginAbi.h, PluginSDK.h)
-imgui/          ImGui library (headers + sources, compiled into the DLL)
-Radar.cpp       Main plugin entry point
-RadarSettings.h Settings POCO with JSON persistence
+POE2Fixer/Plugins/Radar/
+  Radar.dll
+  assets/icons.png
+  config/settings.json
+  config/icons.json
+  config/targets/acts.json
+  config/targets/endgame.json
+  config/targets/ignore.json
 ```
+
+3. Enable **Radar** in the Plugins tab.
+
+If `assets/icons.png` is missing from the repo, run:
+
+```powershell
+.\scripts\copy-radar-assets.ps1
+```
+
+## Settings UI
+
+Open the Plugins tab → **Radar** → three tabs:
+
+- **General Settings** — overlay toggle, walkable map, visibility rules
+- **Icon Management** — per-category icons and sizes
+- **Objects** — POI targets by area, Add POI/Entity from map
+
+## First-run migration
+
+If plugin `config/` is empty, the plugin may import once from legacy host paths next to Fixer.exe (`Configs/radar/`, `Resources/radar/`), then never read them again.
+
+## SDK
+
+Targets Plugin SDK **v6**. Bundled headers in `sdk/` must match the host.
+
+## Build
+
+```text
+MSBuild Radar.sln -p:Configuration=Release -p:Platform=x64
+```
+
+Requires Visual Studio 2022 Build Tools (v143), Windows SDK, D3D11.

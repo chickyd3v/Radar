@@ -1,0 +1,226 @@
+﻿{
+    "ChestIcons":  {
+                       "All Other Chest":  {
+                                               "Scale":  15.0,
+                                               "Path":  "Resources/radar/icons.png",
+                                               "CX":  10.0,
+                                               "CY":  10.0
+                                           },
+                       "Jeweller\u0027s Strongbox":  {
+                                                         "Scale":  35.0,
+                                                         "Path":  "Resources/radar/icons.png",
+                                                         "CX":  11.0,
+                                                         "CY":  60.0
+                                                     },
+                       "Large Strongbox":  {
+                                               "Scale":  35.0,
+                                               "Path":  "Resources/radar/icons.png",
+                                               "CX":  8.0,
+                                               "CY":  62.0
+                                           },
+                       "Magic Chests":  {
+                                            "Scale":  25.0,
+                                            "Path":  "Resources/radar/icons.png",
+                                            "CX":  2.0,
+                                            "CY":  70.0
+                                        },
+                       "Omen Chest":  {
+                                          "Scale":  40.0,
+                                          "Path":  "Resources/radar/icons.png",
+                                          "CX":  3.0,
+                                          "CY":  58.0
+                                      },
+                       "Rare Chests":  {
+                                           "Scale":  30.0,
+                                           "Path":  "Resources/radar/icons.png",
+                                           "CX":  1.0,
+                                           "CY":  70.0
+                                       },
+                       "Researcher\u0027s Strongbox":  {
+                                                           "Scale":  35.0,
+                                                           "Path":  "Resources/radar/icons.png",
+                                                           "CX":  6.0,
+                                                           "CY":  62.0
+                                                       },
+                       "Strongbox":  {
+                                         "Scale":  30.0,
+                                         "Path":  "Resources/radar/icons.png",
+                                         "CX":  1.0,
+                                         "CY":  58.0
+                                     }
+                   },
+    "POIMonsters":  {
+                        "-1":  {
+                                   "Scale":  30.0,
+                                   "Path":  "Resources/radar/icons.png",
+                                   "CX":  12.0,
+                                   "CY":  44.0
+                               }
+                    },
+    "ExpeditionIcons":  {
+                            "Armour Chest":  {
+                                                 "Scale":  0.0,
+                                                 "Path":  "Resources/radar/icons.png",
+                                                 "CX":  1.0,
+                                                 "CY":  39.0
+                                             },
+                            "Cavern Entrance":  {
+                                                    "Scale":  50.0,
+                                                    "Path":  "Resources/radar/icons.png",
+                                                    "CX":  0.0,
+                                                    "CY":  2.0
+                                                },
+                            "Chest Quantity Remnant":  {
+                                                           "Scale":  60.0,
+                                                           "Path":  "Resources/radar/icons.png",
+                                                           "CX":  11.0,
+                                                           "CY":  40.0
+                                                       },
+                            "Currency Chest":  {
+                                                   "Scale":  0.0,
+                                                   "Path":  "Resources/radar/icons.png",
+                                                   "CX":  10.0,
+                                                   "CY":  38.0
+                                               },
+                            "Generic Expedition Chests":  {
+                                                              "Scale":  0.0,
+                                                              "Path":  "Resources/radar/icons.png",
+                                                              "CX":  4.0,
+                                                              "CY":  41.0
+                                                          },
+                            "Logbook":  {
+                                            "Scale":  50.0,
+                                            "Path":  "Resources/radar/icons.png",
+                                            "CX":  4.0,
+                                            "CY":  40.0
+                                        },
+                            "Maps Chest":  {
+                                               "Scale":  0.0,
+                                               "Path":  "Resources/radar/icons.png",
+                                               "CX":  13.0,
+                                               "CY":  38.0
+                                           },
+                            "Splinter Chest":  {
+                                                   "Scale":  55.0,
+                                                   "Path":  "Resources/radar/icons.png",
+                                                   "CX":  4.0,
+                                                   "CY":  40.0
+                                               },
+                            "Trinkets Chest":  {
+                                                   "Scale":  0.0,
+                                                   "Path":  "Resources/radar/icons.png",
+                                                   "CX":  0.0,
+                                                   "CY":  39.0
+                                               },
+                            "Weapon Chest":  {
+                                                 "Scale":  0.0,
+                                                 "Path":  "Resources/radar/icons.png",
+                                                 "CX":  2.0,
+                                                 "CY":  39.0
+                                             }
+                        },
+    "BaseIcons":  {
+                      "Friendly":  {
+                                       "Scale":  15.0,
+                                       "Path":  "Resources/radar/icons.png",
+                                       "CX":  1.0,
+                                       "CY":  0.0
+                                   },
+                      "Leader":  {
+                                     "Scale":  25.0,
+                                     "Path":  "Resources/radar/icons.png",
+                                     "CX":  3.0,
+                                     "CY":  1.0
+                                 },
+                      "Magic Monster":  {
+                                            "Scale":  30.0,
+                                            "Path":  "Resources/radar/icons.png",
+                                            "CX":  6.0,
+                                            "CY":  3.0
+                                        },
+                      "NPC":  {
+                                  "Scale":  15.0,
+                                  "Path":  "Resources/radar/icons.png",
+                                  "CX":  3.0,
+                                  "CY":  0.0
+                              },
+                      "Normal Monster":  {
+                                             "Scale":  30.0,
+                                             "Path":  "Resources/radar/icons.png",
+                                             "CX":  0.0,
+                                             "CY":  14.0
+                                         },
+                      "Pinnacle Boss Not Attackable":  {
+                                                           "Scale":  30.0,
+                                                           "Path":  "Resources/radar/icons.png",
+                                                           "CX":  6.0,
+                                                           "CY":  6.0
+                                                       },
+                      "Player":  {
+                                     "Scale":  15.0,
+                                     "Path":  "Resources/radar/icons.png",
+                                     "CX":  2.0,
+                                     "CY":  0.0
+                                 },
+                      "Rare Monster":  {
+                                           "Scale":  30.0,
+                                           "Path":  "Resources/radar/icons.png",
+                                           "CX":  4.0,
+                                           "CY":  57.0
+                                       },
+                      "Self":  {
+                                   "Scale":  15.0,
+                                   "Path":  "Resources/radar/icons.png",
+                                   "CX":  0.0,
+                                   "CY":  0.0
+                               },
+                      "Shrine":  {
+                                     "Scale":  30.0,
+                                     "Path":  "Resources/radar/icons.png",
+                                     "CX":  7.0,
+                                     "CY":  0.0
+                                 },
+                      "Special NPC":  {
+                                          "Scale":  30.0,
+                                          "Path":  "Resources/radar/icons.png",
+                                          "CX":  13.0,
+                                          "CY":  42.0
+                                      },
+                      "Unique Monster":  {
+                                             "Scale":  30.0,
+                                             "Path":  "Resources/radar/icons.png",
+                                             "CX":  6.0,
+                                             "CY":  57.0
+                                         }
+                  },
+    "DeliriumIcons":  {
+                          "Delirium Bomb":  {
+                                                "Scale":  15.0,
+                                                "Path":  "Resources/radar/icons.png",
+                                                "CX":  11.0,
+                                                "CY":  37.0
+                                            },
+                          "Delirium Spawner":  {
+                                                   "Scale":  15.0,
+                                                   "Path":  "Resources/radar/icons.png",
+                                                   "CX":  1.0,
+                                                   "CY":  40.0
+                                               }
+                      },
+    "OtherImportantObjects":  {
+                                  "-1":  {
+                                             "Scale":  30.0,
+                                             "Path":  "Resources/radar/icons.png",
+                                             "CX":  1.0,
+                                             "CY":  37.0
+                                         }
+                              },
+    "BreachIcons":  {
+                        "Breach Chest":  {
+                                             "Scale":  20.0,
+                                             "Path":  "Resources/radar/icons.png",
+                                             "CX":  1.0,
+                                             "CY":  2.0
+                                         }
+                    }
+}
