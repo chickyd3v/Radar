@@ -3,6 +3,8 @@
 
 #include "IconAtlas.h"
 
+#include <cmath>
+
 #include <imgui.h>
 
 namespace RadarRender {
@@ -27,9 +29,11 @@ bool IconAtlas::Load(void* d3dDevice, const std::filesystem::path& pngPath,
     m_texW = w;
     m_texH = h;
     m_cols = gridCols > 1 ? gridCols : 1;
-    m_rows = gridRows > 1 ? gridRows : 1;
     m_cellW = static_cast<float>(w) / static_cast<float>(m_cols);
-    m_cellH = static_cast<float>(h) / static_cast<float>(m_rows);
+    // icons.png uses square cells; row count follows texture height (not max icon CY index).
+    m_rows = std::max(1, static_cast<int>(std::lround(static_cast<float>(h) / m_cellW)));
+    m_cellH = m_cellW;
+    (void)gridRows;
 
     D3D11_TEXTURE2D_DESC desc{};
     desc.Width = static_cast<UINT>(w);
