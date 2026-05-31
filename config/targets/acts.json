@@ -291,7 +291,7 @@
         },
         {
             "Name": "Renly's Tools (Salvaging Bench)",
-            "Path": "Metadata/Terrain/Woods/Village/Blacksmith_Large.tdtx:[]",
+            "Path": "Metadata/Terrain/Woods/Village/Blacksmith.tdtx:[]",
             "Icon": false,
             "IconName": "",
             "IconSize": 30.0,
