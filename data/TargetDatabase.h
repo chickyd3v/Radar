@@ -41,6 +41,13 @@ public:
             t.nameColor = ParseRgbString(o["NameColor"].get<std::string>(), t.nameColor);
         if (o.contains("BGColor") && o["BGColor"].is_string())
             t.bgColor = ParseRgbString(o["BGColor"].get<std::string>(), t.bgColor);
+        if (o.contains("AnchorGridX") && o.contains("AnchorGridY")) {
+            t.anchorGridX = o.value("AnchorGridX", 0.f);
+            t.anchorGridY = o.value("AnchorGridY", 0.f);
+            t.hasAnchor = true;
+            t.anchorTileX = o.value("AnchorTileX", 0);
+            t.anchorTileY = o.value("AnchorTileY", 0);
+        }
         return t;
     }
 
@@ -129,6 +136,15 @@ public:
                     {"BGColor", std::to_string(t.bgColor.r) + ", " + std::to_string(t.bgColor.g)
                                  + ", " + std::to_string(t.bgColor.b)},
                 });
+                if (t.hasAnchor) {
+                    auto& o = arr.back();
+                    o["AnchorGridX"] = t.anchorGridX;
+                    o["AnchorGridY"] = t.anchorGridY;
+                    if (t.anchorTileX != 0 || t.anchorTileY != 0) {
+                        o["AnchorTileX"] = t.anchorTileX;
+                        o["AnchorTileY"] = t.anchorTileY;
+                    }
+                }
             }
             if (!arr.empty()) j[area] = arr;
         }

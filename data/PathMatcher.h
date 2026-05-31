@@ -32,6 +32,18 @@ inline std::string NormalizePathLower(std::string_view path) {
     return out;
 }
 
+// Suffix after ':' (e.g. "1-y:1", "[]"). Empty when path has no suffix.
+inline std::string ExtractTileSuffix(std::string_view path) {
+    const auto colon = path.find(':');
+    if (colon == std::string::npos) return {};
+    return NormalizePathLower(path.substr(colon + 1));
+}
+
+inline bool TileSuffixMatches(std::string_view patternSuffix, std::string_view candidateSuffix) {
+    if (patternSuffix.empty() || patternSuffix == "[]") return true;
+    return patternSuffix == candidateSuffix;
+}
+
 // Game updates may use .tdtx, .tdbx, .tdb, .ot — match on path stem only.
 inline std::string CanonicalTerrainPath(std::string_view path) {
     std::string s = NormalizePathLower(path);
@@ -50,11 +62,13 @@ inline std::string CanonicalTerrainPath(std::string_view path) {
 
 struct CompiledPattern {
     std::string normalized;
+    std::string tileSuffix;
     bool        hasWildcard = false;
 };
 
 inline CompiledPattern CompilePattern(std::string_view path) {
     CompiledPattern p;
+    p.tileSuffix = ExtractTileSuffix(path);
     p.normalized = CanonicalTerrainPath(path);
     p.hasWildcard = p.normalized.find('*') != std::string::npos;
     return p;
@@ -62,6 +76,7 @@ inline CompiledPattern CompilePattern(std::string_view path) {
 
 inline bool MatchPattern(const CompiledPattern& pattern, std::string_view candidateRaw) {
     if (pattern.normalized.empty()) return false;
+    if (!TileSuffixMatches(pattern.tileSuffix, ExtractTileSuffix(candidateRaw))) return false;
     const std::string candidate = CanonicalTerrainPath(candidateRaw);
     if (!pattern.hasWildcard) {
         return candidate == pattern.normalized;

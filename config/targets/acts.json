@@ -177,7 +177,11 @@
         },
         {
             "Name": "Dryadic Ritual (Support gem)",
-            "Path": "Metadata/Terrain/Woods/Features_Cairns/GrassHole_*.tdtx:[]",
+            "Path": "Metadata/Terrain/Woods/Features_Cairns/GrassHole_01.tdtx:1-y:1",
+            "AnchorGridX": 1334,
+            "AnchorGridY": 1196,
+            "AnchorTileX": 58,
+            "AnchorTileY": 52,
             "Icon": false,
             "IconName": "",
             "IconSize": 30.0,

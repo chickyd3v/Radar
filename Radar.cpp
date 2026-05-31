@@ -154,8 +154,10 @@ private:
             float nearestDistSq = kPickerRadiusSq;
 
             ctx()->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+                const float tz = ctx()->Terrain.GetTerrainHeight(static_cast<int>(loc.X),
+                                                                 static_cast<int>(loc.Y));
                 const auto scr =
-                    RadarRender::ProjectGridToScreen(gameCtx, snap, loc.X, loc.Y, 0.f);
+                    RadarRender::ProjectGridToScreen(gameCtx, snap, loc.X, loc.Y, tz);
                 if (!scr.valid) return true;
                 const float dx = mouse.x - scr.sx;
                 const float dy = mouse.y - scr.sy;
@@ -194,6 +196,11 @@ private:
                 m_ui.editTarget.category = "User";
                 m_ui.editTarget.enabled = true;
                 m_ui.editTarget.showIcon = false;
+                m_ui.editTarget.hasAnchor = true;
+                m_ui.editTarget.anchorGridX = nearest->X;
+                m_ui.editTarget.anchorGridY = nearest->Y;
+                m_ui.editTarget.anchorTileX = nearest->TileX;
+                m_ui.editTarget.anchorTileY = nearest->TileY;
                 m_ui.editAreaKey = m_overlay.targets.ResolveAreaKey(snap.CurrentAreaHash,
                                                                     snap.CurrentAreaName);
                 m_ui.editIsNew = true;

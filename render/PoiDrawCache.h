@@ -83,10 +83,84 @@ struct PoiDrawCache {
         return matches;
     }
 
+    // TGT metatiles are 3x3; averaging all cells pulls the map marker south. Use the north row.
+    static bool ProjectMetatileScreenNorth(PluginSDK::Context* ctx,
+                                           const PluginSDK::Snapshot& snap,
+                                           const std::vector<std::pair<float, float>>& cells,
+                                           float& outSx, float& outSy) {
+        if (!ctx || cells.empty()) return false;
+        float minGy = cells[0].second;
+        for (const auto& [gx, gy] : cells) {
+            (void)gx;
+            minGy = std::min(minGy, gy);
+        }
+        float sx = 0.f, sy = 0.f;
+        int   n = 0;
+        for (const auto& [gx, gy] : cells) {
+            if (gy > minGy + 0.5f) continue;
+            const float tz = TerrainHeightAtGrid(ctx, gx, gy);
+            ProjectedScreen scr;
+            if (snap.LargeMap.IsVisible)
+                scr = ProjectGridToLargeMapScreen(ctx, snap, gx, gy, tz);
+            else if (snap.MiniMap.IsVisible)
+                scr = ProjectGridToMiniMapScreen(ctx, snap, gx, gy, tz);
+            else
+                continue;
+            if (!scr.valid) continue;
+            sx += scr.sx;
+            sy += scr.sy;
+            ++n;
+        }
+        if (n == 0) return false;
+        outSx = sx / static_cast<float>(n);
+        outSy = sy / static_cast<float>(n);
+        return true;
+    }
+
+    static void FillMetatileCells(PluginSDK::Context* ctx, RadarData::PoiResolved& p,
+                                  const RadarData::TargetEntry& t,
+                                  const RadarData::CompiledPattern& pat) {
+        if (!ctx || !t.hasAnchor) return;
+        p.metatileCells.clear();
+        ctx->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+            if (RadarData::CanonicalTerrainPath(loc.Path) != pat.normalized) return true;
+            if (t.anchorTileX != 0 || t.anchorTileY != 0) {
+                if (std::abs(loc.TileX - t.anchorTileX) > 1 || std::abs(loc.TileY - t.anchorTileY) > 1)
+                    return true;
+            } else if (std::hypot(loc.X - t.anchorGridX, loc.Y - t.anchorGridY) > 40.f) {
+                return true;
+            }
+            p.metatileCells.emplace_back(loc.X, loc.Y);
+            return true;
+        });
+        if (p.metatileCells.size() < 4) {
+            p.metatileCells.clear();
+            return;
+        }
+        float cx = 0.f, cy = 0.f;
+        for (const auto& [gx, gy] : p.metatileCells) {
+            cx += gx;
+            cy += gy;
+        }
+        const float inv = 1.f / static_cast<float>(p.metatileCells.size());
+        p.gridX = cx * inv;
+        p.gridY = cy * inv;
+        p.terrainZ = ctx->Terrain.GetTerrainHeight(static_cast<int>(p.gridX), static_cast<int>(p.gridY));
+    }
+
     void UpdateScreenPositions(PluginSDK::Context* ctx, const PluginSDK::Snapshot& snap) {
         for (auto& p : pois) {
             p.hasScreen = false;
             ProjectedScreen scr;
+            if (p.fromTgt && p.metatileCells.size() >= 4) {
+                float northSx = 0.f, northSy = 0.f;
+                if (ProjectMetatileScreenNorth(ctx, snap, p.metatileCells, northSx, northSy)) {
+                    p.screenX = northSx;
+                    p.screenY = northSy;
+                    p.hasScreen = true;
+                    continue;
+                }
+            }
             if (p.fromTgt) {
                 if (snap.LargeMap.IsVisible) {
                     scr = ProjectTgtToLargeMapScreen(ctx, snap, p.gridX, p.gridY);
@@ -157,11 +231,40 @@ struct PoiDrawCache {
 
         std::vector<RadarData::CompiledPattern> compiled;
         compiled.reserve(targets.size());
-        for (const auto* t : targets) compiled.push_back(RadarData::CompilePattern(t->path));
+        for (const auto* t : targets)
+            compiled.push_back(RadarData::CompilePattern(t->path));
 
         struct TgtCand {
             float gx = 0.f;
             float gy = 0.f;
+        };
+        constexpr float kPoiClusterDist = 120.f;
+        auto clusterCands = [](const std::vector<TgtCand>& cands, float maxDist) {
+            std::vector<std::vector<TgtCand>> clusters;
+            for (const TgtCand& c : cands) {
+                int best = -1;
+                float bestDist = maxDist;
+                for (size_t ci = 0; ci < clusters.size(); ++ci) {
+                    float cx = 0.f, cy = 0.f;
+                    for (const TgtCand& m : clusters[ci]) {
+                        cx += m.gx;
+                        cy += m.gy;
+                    }
+                    const float inv = 1.f / static_cast<float>(clusters[ci].size());
+                    cx *= inv;
+                    cy *= inv;
+                    const float d = std::hypot(c.gx - cx, c.gy - cy);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = static_cast<int>(ci);
+                    }
+                }
+                if (best >= 0)
+                    clusters[static_cast<size_t>(best)].push_back(c);
+                else
+                    clusters.push_back({c});
+            }
+            return clusters;
         };
         std::vector<std::vector<TgtCand>> perTarget(targets.size());
 
@@ -175,6 +278,16 @@ struct PoiDrawCache {
             ++tgtEnum;
             for (size_t i = 0; i < targets.size(); ++i) {
                 if (!RadarData::MatchPattern(compiled[i], loc.Path)) continue;
+                const auto* t = targets[i];
+                if (t->hasAnchor) {
+                    if (t->anchorTileX != 0 || t->anchorTileY != 0) {
+                        if (std::abs(loc.TileX - t->anchorTileX) > 1
+                            || std::abs(loc.TileY - t->anchorTileY) > 1)
+                            continue;
+                    } else if (std::hypot(loc.X - t->anchorGridX, loc.Y - t->anchorGridY) > 40.f) {
+                        continue;
+                    }
+                }
                 perTarget[i].push_back({loc.X, loc.Y});
             }
             return true;
@@ -187,33 +300,72 @@ struct PoiDrawCache {
             if (perTarget[i].empty()) continue;
             const auto* t = targets[i];
 
-            float centX = 0.f, centY = 0.f;
-            for (const TgtCand& c : perTarget[i]) {
-                centX += c.gx;
-                centY += c.gy;
-            }
-            const float invN = 1.f / static_cast<float>(perTarget[i].size());
-            centX *= invN;
-            centY *= invN;
-
             struct ScoredCand {
                 float gx = 0.f;
                 float gy = 0.f;
                 float score = 0.f;
             };
             std::vector<ScoredCand> scored;
-            scored.reserve(perTarget[i].size());
-            for (const TgtCand& c : perTarget[i]) {
-                float score = -std::hypot(c.gx - centX, c.gy - centY);
-                if (ctx->Terrain.IsWalkable(static_cast<int>(c.gx), static_cast<int>(c.gy)))
-                    score += 500.f;
-                if (snap.LargeMap.IsVisible || snap.MiniMap.IsVisible) {
-                    if (ProjectTgtToMapScreen(ctx, snap, c.gx, c.gy).valid) score += 5000.f;
+            const auto clusters = clusterCands(perTarget[i], kPoiClusterDist);
+            scored.reserve(clusters.size());
+            for (const auto& cluster : clusters) {
+                float cCentX = 0.f, cCentY = 0.f;
+                for (const TgtCand& c : cluster) {
+                    cCentX += c.gx;
+                    cCentY += c.gy;
                 }
-                scored.push_back({c.gx, c.gy, score});
+                const float invN = 1.f / static_cast<float>(cluster.size());
+                cCentX *= invN;
+                cCentY *= invN;
+
+                ScoredCand best = {cluster[0].gx, cluster[0].gy, -1e9f};
+                for (const TgtCand& c : cluster) {
+                    float score = -std::hypot(c.gx - cCentX, c.gy - cCentY);
+                    if (ctx->Terrain.IsWalkable(static_cast<int>(c.gx), static_cast<int>(c.gy)))
+                        score += 500.f;
+                    if (snap.LargeMap.IsVisible || snap.MiniMap.IsVisible) {
+                        if (ProjectTgtToMapScreen(ctx, snap, c.gx, c.gy).valid) score += 5000.f;
+                    }
+                    if (score > best.score) best = {c.gx, c.gy, score};
+                }
+                scored.push_back(best);
             }
             std::sort(scored.begin(), scored.end(),
                       [](const ScoredCand& a, const ScoredCand& b) { return a.score > b.score; });
+
+            if (scored.size() > 1) {
+                size_t bestIdx = 0;
+                if (t->hasAnchor) {
+                    float bestD = 1e9f;
+                    for (size_t ri = 0; ri < scored.size(); ++ri) {
+                        const float d = std::hypot(scored[ri].gx - t->anchorGridX,
+                                                   scored[ri].gy - t->anchorGridY);
+                        if (d < bestD) {
+                            bestD = d;
+                            bestIdx = ri;
+                        }
+                    }
+                } else if (snap.Player.IsValid) {
+                    const float top = scored[0].score;
+                    std::vector<size_t> tied;
+                    for (size_t ri = 0; ri < scored.size(); ++ri) {
+                        if (scored[ri].score >= top - 0.5f) tied.push_back(ri);
+                        else break;
+                    }
+                    if (tied.size() > 1) {
+                        float bestD = 1e9f;
+                        for (size_t ri : tied) {
+                            const float d = std::hypot(scored[ri].gx - snap.Player.GridPositionX,
+                                                       scored[ri].gy - snap.Player.GridPositionY);
+                            if (d < bestD) {
+                                bestD = d;
+                                bestIdx = ri;
+                            }
+                        }
+                    }
+                }
+                if (bestIdx != 0) std::swap(scored[0], scored[bestIdx]);
+            }
 
             const int want = std::clamp(t->expectedCount, 1, 32);
             int placed = 0;
@@ -221,7 +373,9 @@ struct PoiDrawCache {
                 if (placed >= want) break;
                 bool tooClose = false;
                 for (const auto& existing : pois) {
-                    if (std::hypot(sc.gx - existing.gridX, sc.gy - existing.gridY) < kMinPoiGridSep) {
+                    const float sep = std::hypot(sc.gx - existing.gridX, sc.gy - existing.gridY);
+                    if (sep < 0.5f) continue;
+                    if (sep < kMinPoiGridSep) {
                         tooClose = true;
                         break;
                     }
@@ -241,6 +395,7 @@ struct PoiDrawCache {
                 p.iconCy = iconDef.cy;
                 p.nameColor = t->nameColor;
                 p.bgColor = t->bgColor;
+                FillMetatileCells(ctx, p, *t, compiled[i]);
                 pois.push_back(std::move(p));
                 ++placed;
                 ++tgtHits;

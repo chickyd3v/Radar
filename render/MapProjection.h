@@ -175,39 +175,9 @@ inline ProjectedScreen ProjectGridToMiniMapScreen(PluginSDK::Context* ctx,
     return out;
 }
 
-// TGT / POI: SDK docs require worldZ = 0. Do not use MapTransform fallback (wrong cluster).
-inline ProjectedScreen ProjectTgtToLargeMapScreen(PluginSDK::Context* ctx,
-                                                  const PluginSDK::Snapshot& snap,
-                                                  float gx, float gy) {
-    ProjectedScreen out;
-    if (!ctx || !snap.LargeMap.IsVisible) return out;
-    if (ctx->Render.GridToLargeMap(gx, gy, 0.f, out.sx, out.sy)
-        && IsInsideMapRect(snap.LargeMap, out.sx, out.sy)) {
-        out.valid = true;
-    }
-    return out;
-}
-
-inline ProjectedScreen ProjectTgtToMiniMapScreen(PluginSDK::Context* ctx,
-                                                 const PluginSDK::Snapshot& snap,
-                                                 float gx, float gy) {
-    ProjectedScreen out;
-    if (!ctx || !snap.MiniMap.IsVisible) return out;
-    if (ctx->Render.GridToMiniMap(gx, gy, 0.f, out.sx, out.sy)
-        && IsOnMinimapSurface(ctx, snap.MiniMap, out.sx, out.sy)) {
-        out.valid = true;
-    }
-    return out;
-}
-
-inline ProjectedScreen ProjectTgtToMapScreen(PluginSDK::Context* ctx,
-                                             const PluginSDK::Snapshot& snap,
-                                             float gx, float gy) {
-    if (snap.LargeMap.IsVisible) {
-        const auto out = ProjectTgtToLargeMapScreen(ctx, snap, gx, gy);
-        if (out.valid) return out;
-    }
-    return ProjectTgtToMiniMapScreen(ctx, snap, gx, gy);
+inline float TerrainHeightAtGrid(PluginSDK::Context* ctx, float gx, float gy) {
+    if (!ctx) return 0.f;
+    return ctx->Terrain.GetTerrainHeight(static_cast<int>(gx), static_cast<int>(gy));
 }
 
 inline ProjectedScreen ProjectGridToMapScreen(PluginSDK::Context* ctx,
@@ -218,6 +188,24 @@ inline ProjectedScreen ProjectGridToMapScreen(PluginSDK::Context* ctx,
         if (out.valid) return out;
     }
     return ProjectGridToMiniMapScreen(ctx, snap, gx, gy, terrainZ);
+}
+
+inline ProjectedScreen ProjectTgtToLargeMapScreen(PluginSDK::Context* ctx,
+                                                  const PluginSDK::Snapshot& snap,
+                                                  float gx, float gy) {
+    return ProjectGridToLargeMapScreen(ctx, snap, gx, gy, TerrainHeightAtGrid(ctx, gx, gy));
+}
+
+inline ProjectedScreen ProjectTgtToMiniMapScreen(PluginSDK::Context* ctx,
+                                                 const PluginSDK::Snapshot& snap,
+                                                 float gx, float gy) {
+    return ProjectGridToMiniMapScreen(ctx, snap, gx, gy, TerrainHeightAtGrid(ctx, gx, gy));
+}
+
+inline ProjectedScreen ProjectTgtToMapScreen(PluginSDK::Context* ctx,
+                                             const PluginSDK::Snapshot& snap,
+                                             float gx, float gy) {
+    return ProjectGridToMapScreen(ctx, snap, gx, gy, TerrainHeightAtGrid(ctx, gx, gy));
 }
 
 inline ProjectedScreen ProjectGridToScreen(PluginSDK::Context* ctx,

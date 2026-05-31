@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace RadarData {
 
@@ -29,6 +31,11 @@ struct TargetEntry {
     Rgba8       bgColor{0, 0, 0, 255};
     int         expectedCount = 1;
     std::string category;
+    bool        hasAnchor = false;
+    float       anchorGridX = 0.f;
+    float       anchorGridY = 0.f;
+    int         anchorTileX = 0;
+    int         anchorTileY = 0;
 };
 
 struct PoiResolved {
@@ -37,6 +44,7 @@ struct PoiResolved {
     float       gridY = 0.f;
     float       terrainZ = 0.f;
     bool        fromTgt = true;
+    std::vector<std::pair<float, float>> metatileCells;
     float       screenX = 0.f;
     float       screenY = 0.f;
     bool        hasScreen = false;
