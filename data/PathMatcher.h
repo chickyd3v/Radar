@@ -66,6 +66,11 @@ struct CompiledPattern {
     bool        hasWildcard = false;
 };
 
+struct CompiledCandidate {
+    std::string normalized;
+    std::string tileSuffix;
+};
+
 inline CompiledPattern CompilePattern(std::string_view path) {
     CompiledPattern p;
     p.tileSuffix = ExtractTileSuffix(path);
@@ -74,12 +79,19 @@ inline CompiledPattern CompilePattern(std::string_view path) {
     return p;
 }
 
-inline bool MatchPattern(const CompiledPattern& pattern, std::string_view candidateRaw) {
+inline CompiledCandidate CompileCandidate(std::string_view path) {
+    CompiledCandidate c;
+    c.tileSuffix = ExtractTileSuffix(path);
+    c.normalized = CanonicalTerrainPath(path);
+    return c;
+}
+
+inline bool MatchPattern(const CompiledPattern& pattern, const CompiledCandidate& candidate) {
     if (pattern.normalized.empty()) return false;
-    if (!TileSuffixMatches(pattern.tileSuffix, ExtractTileSuffix(candidateRaw))) return false;
-    const std::string candidate = CanonicalTerrainPath(candidateRaw);
+    if (!TileSuffixMatches(pattern.tileSuffix, candidate.tileSuffix)) return false;
+    const std::string_view cand = candidate.normalized;
     if (!pattern.hasWildcard) {
-        return candidate == pattern.normalized;
+        return cand == pattern.normalized;
     }
     const auto& pat = pattern.normalized;
     const size_t onlyStar = pat.find('*');
@@ -88,28 +100,32 @@ inline bool MatchPattern(const CompiledPattern& pattern, std::string_view candid
         && pat.find('*', onlyStar + 1) == std::string::npos) {
         const std::string_view prefix = std::string_view(pat).substr(0, onlyStar);
         if (prefix.empty()) return true;
-        if (candidate.size() >= prefix.size()
-            && candidate.compare(candidate.size() - prefix.size(), prefix.size(), prefix) == 0)
+        if (cand.size() >= prefix.size()
+            && cand.compare(cand.size() - prefix.size(), prefix.size(), prefix) == 0)
             return true;
-        return candidate.size() >= prefix.size()
-               && candidate.compare(0, prefix.size(), prefix) == 0;
+        return cand.size() >= prefix.size()
+               && cand.compare(0, prefix.size(), prefix) == 0;
     }
     size_t pi = 0, ci = 0;
-    while (pi < pat.size() && ci < candidate.size()) {
+    while (pi < pat.size() && ci < cand.size()) {
         if (pat[pi] == '*') {
             ++pi;
             if (pi >= pat.size()) return true;
-            const size_t next = candidate.find(pat[pi], ci);
+            const size_t next = cand.find(pat[pi], ci);
             if (next == std::string::npos) return false;
             ci = next;
             continue;
         }
-        if (pat[pi] != candidate[ci]) return false;
+        if (pat[pi] != cand[ci]) return false;
         ++pi;
         ++ci;
     }
     while (pi < pat.size() && pat[pi] == '*') ++pi;
-    return pi >= pat.size() && ci >= candidate.size();
+    return pi >= pat.size() && ci >= cand.size();
+}
+
+inline bool MatchPattern(const CompiledPattern& pattern, std::string_view candidateRaw) {
+    return MatchPattern(pattern, CompileCandidate(candidateRaw));
 }
 
 struct PatternMatcherSet {

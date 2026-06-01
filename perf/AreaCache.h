@@ -8,6 +8,7 @@
 #include "data/IconTables.h"
 #include "sdk/PluginSDK.h"
 
+#include <chrono>
 
 namespace RadarPerf {
 
@@ -21,7 +22,10 @@ struct AreaCacheState {
     bool                            poiDirty = true;
     int                             lastTgtMatchCount = -1;
     int                             lastEntityMatchCount = -1;
-    uint64_t                        lastTgtPollTime = 0;
+    std::chrono::steady_clock::time_point lastTgtPollTimePoint = std::chrono::steady_clock::now();
+    std::string                     lastTgtAreaKey;
+    std::vector<RadarData::CompiledPattern> lastTargetPatterns;
+    std::vector<const RadarData::TargetEntry*> lastTargets;
 
     void Clear() {
         areaCounter = 0;
@@ -33,7 +37,10 @@ struct AreaCacheState {
         poiDirty = true;
         lastTgtMatchCount = -1;
         lastEntityMatchCount = -1;
-        lastTgtPollTime = 0;
+        lastTgtPollTimePoint = std::chrono::steady_clock::now();
+        lastTgtAreaKey.clear();
+        lastTargetPatterns.clear();
+        lastTargets.clear();
     }
 
     bool NeedsFullRebuild(const PluginSDK::Snapshot& snap, const uint8_t* walkData) const {
@@ -74,13 +81,37 @@ struct AreaCacheState {
                           const RadarData::RadarConfig& cfg, const RadarData::TargetDatabase& db) {
         if (!cfg.ShowImportantPOI) return;
         if (!snap.LargeMap.IsVisible && !snap.MiniMap.IsVisible) return;
-        if (snap.LastUpdateTime - lastTgtPollTime < 1500) return;
-        lastTgtPollTime = snap.LastUpdateTime;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastTgtPollTimePoint < std::chrono::milliseconds(5000)) return;
+        lastTgtPollTimePoint = now;
 
         const auto targets =
             db.GetTargetsForArea(snap.CurrentAreaHash, snap.CurrentAreaName);
-        const int tgtCount = RadarRender::PoiDrawCache::CountMatchingTgtLocations(ctx, targets);
-        const int entCount = RadarRender::PoiDrawCache::CountMatchingEntities(snap, targets);
+        if (targets.empty()) return;
+
+        const auto areaKey = db.ResolveAreaKey(snap.CurrentAreaHash, snap.CurrentAreaName);
+        bool compilePatterns = areaKey != lastTgtAreaKey || targets.size() != lastTargets.size();
+        if (!compilePatterns) {
+            for (size_t i = 0; i < targets.size(); ++i) {
+                if (targets[i] != lastTargets[i]) {
+                    compilePatterns = true;
+                    break;
+                }
+            }
+        }
+        if (compilePatterns) {
+            lastTgtAreaKey = areaKey;
+            lastTargets = targets;
+            lastTargetPatterns.clear();
+            lastTargetPatterns.reserve(targets.size());
+            for (const auto* t : targets)
+                lastTargetPatterns.push_back(RadarData::CompilePattern(t->path));
+        }
+
+        const int tgtCount = RadarRender::PoiDrawCache::CountMatchingTgtLocations(ctx,
+                                                                                lastTargetPatterns);
+        const int entCount = RadarRender::PoiDrawCache::CountMatchingEntities(snap,
+                                                                              lastTargetPatterns);
 
         if (lastTgtMatchCount < 0 || lastEntityMatchCount < 0) {
             lastTgtMatchCount = tgtCount;

@@ -47,10 +47,18 @@ struct PoiDrawCache {
         std::vector<RadarData::CompiledPattern> compiled;
         compiled.reserve(targets.size());
         for (const auto* t : targets) compiled.push_back(RadarData::CompilePattern(t->path));
+        return CountMatchingTgtLocations(ctx, compiled);
+    }
+
+    static int CountMatchingTgtLocations(
+        PluginSDK::Context* ctx,
+        const std::vector<RadarData::CompiledPattern>& compiled) {
+        if (!ctx || compiled.empty()) return 0;
         int matches = 0;
         ctx->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+            const auto cand = RadarData::CompileCandidate(loc.Path);
             for (const auto& pat : compiled) {
-                if (RadarData::MatchPattern(pat, loc.Path)) {
+                if (RadarData::MatchPattern(pat, cand)) {
                     ++matches;
                     break;
                 }
@@ -67,14 +75,22 @@ struct PoiDrawCache {
         std::vector<RadarData::CompiledPattern> compiled;
         compiled.reserve(targets.size());
         for (const auto* t : targets) compiled.push_back(RadarData::CompilePattern(t->path));
+        return CountMatchingEntities(snap, compiled);
+    }
+
+    static int CountMatchingEntities(
+        const PluginSDK::Snapshot& snap,
+        const std::vector<RadarData::CompiledPattern>& compiled) {
+        if (compiled.empty()) return 0;
         auto wpath = [](const std::wstring& p) { return std::string(p.begin(), p.end()); };
         int matches = 0;
         for (const auto& e : snap.Entities) {
             if (!e.IsValid) continue;
             const std::string path = wpath(e.Path);
             if (path.empty()) continue;
+            const auto cand = RadarData::CompileCandidate(path);
             for (const auto& pat : compiled) {
-                if (RadarData::MatchPattern(pat, path)) {
+                if (RadarData::MatchPattern(pat, cand)) {
                     ++matches;
                     break;
                 }
@@ -123,7 +139,8 @@ struct PoiDrawCache {
         if (!ctx || !t.hasAnchor) return;
         p.metatileCells.clear();
         ctx->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
-            if (RadarData::CanonicalTerrainPath(loc.Path) != pat.normalized) return true;
+            const auto cand = RadarData::CompileCandidate(loc.Path);
+            if (cand.normalized != pat.normalized) return true;
             if (t.anchorTileX != 0 || t.anchorTileY != 0) {
                 if (std::abs(loc.TileX - t.anchorTileX) > 1 || std::abs(loc.TileY - t.anchorTileY) > 1)
                     return true;
@@ -271,13 +288,14 @@ struct PoiDrawCache {
         int tgtEnum = 0;
         std::string tgtSamples;
         ctx->Terrain.EnumerateTgtLocations([&](const PluginSDK::TgtLocation& loc) {
+            const auto cand = RadarData::CompileCandidate(loc.Path);
             if (tgtEnum < 2) {
                 if (!tgtSamples.empty()) tgtSamples += " | ";
                 tgtSamples += loc.Path;
             }
             ++tgtEnum;
             for (size_t i = 0; i < targets.size(); ++i) {
-                if (!RadarData::MatchPattern(compiled[i], loc.Path)) continue;
+                if (!RadarData::MatchPattern(compiled[i], cand)) continue;
                 const auto* t = targets[i];
                 if (t->hasAnchor) {
                     if (t->anchorTileX != 0 || t->anchorTileY != 0) {
@@ -408,8 +426,9 @@ struct PoiDrawCache {
             if (!e.IsValid) continue;
             const std::string path = wpath(e.Path);
             if (path.empty()) continue;
+            const auto cand = RadarData::CompileCandidate(path);
             for (size_t i = 0; i < targets.size(); ++i) {
-                if (!RadarData::MatchPattern(compiled[i], path)) continue;
+                if (!RadarData::MatchPattern(compiled[i], cand)) continue;
                 const auto* t = targets[i];
                 RadarData::PoiResolved p;
                 p.name = t->name;
